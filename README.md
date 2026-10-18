@@ -61,3 +61,14 @@ Monday is benign-only: it cannot train a classifier alone, and as a test file it
 - Bootstrap CIs and the random split assume independent records; flows from the same attack burst are related, so the random split is optimistic. Prefer the cross-day result for honest claims.
 - Cross-day tests on unseen attack families are expected to score lower; that is a finding, not a bug.
 - No live capture; offline CSV analysis only.
+
+
+## Dataset
+
+The datasets required to run this project are available on Google Drive.
+
+**[Download the datasets here](YOUR_GOOGLE_DRIVE_LINK)**
+
+Download the dataset files and place them inside the `data/` directory in the project root before running the application.
+
+Note: The datasets are hosted externally because of their size.
