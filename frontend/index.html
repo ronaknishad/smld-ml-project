@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetSentinel - Unidirectional Network Threat Analysis</title>
+<style>
+:root{--bg:#F4F6F8;--side:#182631;--card:#fff;--text:#202B36;--muted:#647180;--border:#DCE2E8;--primary:#315B78;--primary-h:#274A63;--ok:#28745A;--warn:#A66A16;--bad:#B43C3C;--sel:#EAF1F6;--badge:#EDF1F4}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font:14px/1.5 Inter,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text)}
+.app{display:flex;min-height:100vh}
+nav{width:220px;background:var(--side);color:#cfd8e0;padding:16px 0;flex-shrink:0}
+nav h1{font-size:17px;margin:0 16px 2px;color:#fff}
+nav small{display:block;margin:0 16px 14px;color:#9fb0bf;font-size:12px}
+nav a{display:block;padding:9px 16px;color:#cfd8e0;text-decoration:none;border-left:3px solid transparent}
+nav a:hover,nav a.active{background:#22384a;color:#fff}
+nav a.active{border-left-color:#7fb0d3}
+main{flex:1;padding:24px;min-width:0;max-width:1320px}
+h2{font-size:24px;margin:0 0 4px} h3{font-size:17px;margin:0 0 8px} h4{font-size:14px;margin:12px 0 6px}
+p{margin:6px 0} .muted{color:var(--muted)} .small{font-size:12px} .mono{font-family:Consolas,"SFMono-Regular",monospace;font-size:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:16px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:12px}
+.stat b{display:block;font-size:22px} .stat span{color:var(--muted);font-size:12px}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin:8px 0}
+label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+label.inline{flex-direction:row;align-items:center;gap:6px;color:var(--text);font-size:13px}
+input,select,textarea{font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--text);min-width:120px}
+.btn{background:var(--primary);color:#fff;border:0;border-radius:4px;padding:8px 14px;font:inherit;cursor:pointer}
+.btn:hover{background:var(--primary-h)} .btn:disabled{opacity:.55;cursor:wait}
+.btn.sec{background:#fff;color:var(--primary);border:1px solid var(--primary)}
+a.link{color:var(--primary);cursor:pointer}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 9px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+th{background:#F9FAFB;font-weight:600;position:sticky;top:0}
+table.sortable th{cursor:pointer}
+tr.click{cursor:pointer} tr.click:hover,tr.sel{background:var(--sel)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;background:var(--badge);font-size:12px;border:1px solid var(--border)}
+.badge.ok{color:var(--ok);border-color:var(--ok)} .badge.warn{color:var(--warn);border-color:var(--warn)} .badge.bad{color:var(--bad);border-color:var(--bad)}
+.banner{border-left:4px solid var(--warn);background:#FBF5EA;padding:8px 12px;border-radius:4px;margin:10px 0}
+.banner.bad{border-color:var(--bad);background:#FBEEEE} .banner.ok{border-color:var(--ok);background:#EEF6F2}
+.bar{display:flex;align-items:center;gap:8px;margin:4px 0}
+.bar .lab{width:170px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .track{flex:1;background:var(--badge);height:14px;border-radius:3px;overflow:hidden}
+.bar .fill{height:100%;background:var(--primary)} .bar .fill.bad{background:var(--bad)} .bar .fill.ok{background:var(--ok)}
+.bar .val{width:120px;font-size:12px;text-align:right}
+.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px}
+.cm td{text-align:center;padding:10px 16px} .cm .tn,.cm .tp{background:#EEF6F2} .cm .fp,.cm .fn{background:#FBEEEE}
+.heat td{text-align:center;padding:3px 5px;font-size:11px;min-width:34px} .heat th{position:static;font-size:11px}
+.pager{display:flex;gap:10px;align-items:center;margin:8px 0}
+#toast{position:fixed;right:16px;top:16px;z-index:9;display:flex;flex-direction:column;gap:8px}
+#toast div{background:#fff;border:1px solid var(--border);border-left:4px solid var(--ok);padding:8px 12px;border-radius:4px;max-width:420px}
+#toast div.bad{border-left-color:var(--bad)}
+@media(max-width:800px){.app{flex-direction:column}nav{width:100%}nav a{display:inline-block}main{padding:14px}}
+</style>
+</head>
+<body>
+<div class="app"><nav id="nav"></nav><main id="main"></main></div>
+<div id="toast" aria-live="polite"></div>
+<script>
+"use strict";
+const V = {};  // pure view functions: data -> html string (unit-tested in Node)
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = (v, d = 3) => {
+  if (v === null || v === undefined || Number.isNaN(v)) return "n/a";
+  if (typeof v !== "number") return esc(v);
+  if (Number.isInteger(v)) return String(v);
+  const a = Math.abs(v);
+  return (a !== 0 && (a >= 1e6 || a < 1e-3)) ? v.toExponential(2) : v.toFixed(d);
+};
+const pval = v => (v === null || v === undefined) ? "n/a" : (v < 1e-300 ? "<1e-300" : v.toExponential(2));
+const pct = v => v === null || v === undefined ? "n/a" : (v * 100).toFixed(2) + "%";
+const ci = a => (a && a[0] !== null && a[1] !== null) ? `[${num(a[0])}, ${num(a[1])}]` : "n/a";
+const date = s => esc((s || "").replace("T", " ").replace(/\+.*$/, ""));
+const badge = (t, k = "") => `<span class="badge ${k}">${esc(t)}</span>`;
+const banner = (t, k = "") => `<div class="banner ${k}">${t}</div>`;
+const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${esc(l)}</span></div>`;
+
+function table(cols, rows, o = {}) {
+  const id = o.id ? ` id="${esc(o.id)}"` : "";
+  const head = cols.map((c, i) => `<th data-i="${i}">${esc(c.h)}</th>`).join("");
+  const body = rows.length ? rows.map(r => `<tr ${r._attr || ""}>` + cols.map(c =>
+    `<td class="${c.num ? "num" : ""}" data-v="${esc(c.v ? c.v(r) : "")}">${c.f(r)}</td>`).join("") + "</tr>").join("")
+    : `<tr><td colspan="${cols.length}" class="muted">No rows.</td></tr>`;
+  return `<div class="scroll"><table${id} class="${o.sortable ? "sortable" : ""}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function bars(items, kind = "") {
+  const max = Math.max(...items.map(i => i.value), 1e-12);
+  return items.map(i => `<div class="bar"><span class="lab" title="${esc(i.label)}">${esc(i.label)}</span><span class="track"><span class="fill ${i.kind || kind}" style="width:${(i.value / (i.max || max) * 100).toFixed(1)}%"></span></span><span class="val">${esc(i.text ?? num(i.value))}</span></div>`).join("");
+}
+function classBars(cd) {
+  if (!cd || !cd.counts) return "";
+  return bars(Object.entries(cd.counts).map(([k, v]) => ({label: k, value: v, max: cd.total, kind: k === "malicious" ? "bad" : "ok",
+    text: `${v.toLocaleString()} (${cd.percent[k].toFixed(2)}%)`})));
+}
+const directionBanner = txt => banner(`<b>Directionality:</b> ${esc(txt)}`, /NOT strict|SYNTHETIC/.test(txt) ? "" : "ok");
+
+// ------------------------------------------------------------------ views
+V.overview = o => {
+  const a = o.latest_analysis, ds = o.latest_dataset;
+  let h = `<h2>Overview</h2><p class="muted">State of this local installation. Values come from stored analyses only.</p>
+  <div class="grid">${stat(o.datasets, "datasets registered")}${stat(o.training_runs, "training runs")}${stat(o.open_alerts, "open alerts (new + under review)")}
+  ${stat(o.active_model ? esc(o.active_model.algorithm) : "none", "active model")}</div>`;
+  if (!a) return h + `<div class="card"><p>No traffic dataset has been analysed yet. Import a supported dataset to begin.</p>
+    <p><a class="btn" href="#/datasets">Go to Dataset Lab</a></p></div>`;
+  h += `<div class="card"><h3>Latest analysis</h3><p class="mono">${esc(a.id)} &middot; ${date(a.created_at)} &middot; model ${esc(a.model_id)}</p>
+    ${ds ? directionBanner(ds.directionality) : ""}
+    ${a.params.warning ? banner(esc(a.params.warning)) : ""}
+    <div class="grid">${stat(a.n_records.toLocaleString(), "records analysed")}${stat(a.n_malicious.toLocaleString(), "predicted malicious")}
+    ${stat(a.n_benign.toLocaleString(), "predicted benign")}${stat(a.params.n_alerts.toLocaleString(), "alerts created")}</div>
+    <h4>Predicted class distribution</h4>${bars([{label: "benign", value: a.n_benign, max: a.n_records, kind: "ok"}, {label: "malicious", value: a.n_malicious, max: a.n_records, kind: "bad"}])}`;
+  if (ds) h += `<h4>Actual labels in the dataset (ground truth)</h4>${classBars(ds.class_counts)}`;
+  const m = a.params.metrics_on_this_dataset;
+  if (m) h += `<h4>Agreement with dataset labels${a.params.in_sample ? " (in-sample)" : ""}</h4>
+    <p>accuracy ${num(m.accuracy)} &middot; precision ${num(m.precision)} &middot; recall ${num(m.recall)} &middot; false positive rate ${num(m.fpr)}</p>`;
+  return h + `<p class="muted small">Predictions are leads for review, not confirmed attacks.</p></div>`;
+};
+
+V.datasetForm = (files, dataDir) => `<div class="card"><h3>Register a dataset</h3>
+  <div class="row"><label>Name<input id="dsName" value="My dataset" maxlength="80"></label>
+  <label>Source<select id="dsKind"><option value="cic2017_forward">CIC-IDS2017 CSV (forward-direction compatibility mode)</option>
+  <option value="synthetic">Synthetic test data (not a benchmark)</option></select></label></div>
+  <div id="cicBox"><h4>CSV files in the data folder <span class="mono muted">${esc(dataDir)}</span></h4>
+  ${files.length ? files.map(f => `<label class="inline"><input type="checkbox" class="dsFile" value="${esc(f.name)}"> ${esc(f.name)} <span class="muted">(${f.size_mb} MB)</span></label>`).join("")
+    : `<p class="muted">No .csv files found. Copy the CIC-IDS2017 MachineLearningCSV day files into that folder, then reload.</p>`}
+  <div class="row"><label>Max rows per file (optional; reads only the first N rows, a partial sample)<input id="dsRows" type="number" min="1" placeholder="all rows"></label>
+  <label class="inline"><input type="checkbox" id="dsDedup" checked> Drop exact duplicate rows (features + label)</label></div></div>
+  <div id="synBox" hidden><div class="row"><label>Records<input id="synN" type="number" value="5000" min="200" max="200000"></label></div>
+  ${banner("Synthetic data exists only to test the software. Never quote its results as detection performance.")}</div>
+  <button class="btn" id="dsGo">Register dataset</button></div>`;
+
+V.datasetList = list => `<div class="card"><h3>Registered datasets</h3>` + table([
+  {h: "Name", f: d => esc(d.name)}, {h: "Source", f: d => d.kind === "synthetic" ? badge("synthetic", "warn") : esc(d.kind)},
+  {h: "Records", num: 1, f: d => d.n_rows.toLocaleString()},
+  {h: "Malicious", num: 1, f: d => { const c = d.class_counts; return c.percent.malicious !== undefined ? c.percent.malicious.toFixed(2) + "%" : "0%"; }},
+  {h: "Created", f: d => date(d.created_at)}, {h: "ID", f: d => `<span class="mono">${esc(d.id)}</span>`}],
+  list.map(d => ({...d, _attr: `class="click" data-id="${esc(d.id)}"`}))) + `<p class="muted small">Click a row to inspect it.</p></div>`;
+
+V.datasetDetail = (ds, prev) => {
+  const rep = ds.cleaning_report;
+  let h = `<div class="card"><h3>${esc(ds.name)} <span class="mono muted">${esc(ds.id)}</span></h3>${directionBanner(ds.directionality)}
+  <h4>Class distribution (dataset labels)</h4>${classBars(ds.class_counts)}
+  <p class="muted small">Imbalance ratio ${num(ds.class_counts.imbalance_ratio, 1)}:1. With imbalance, accuracy can be high while malicious recall is poor.</p>`;
+  if (rep.files) h += `<h4>Cleaning report</h4>` + table([
+    {h: "File", f: r => esc(r.source_file)}, {h: "Raw rows", num: 1, f: r => r.n_raw_rows.toLocaleString()},
+    {h: "Init-window -1 to missing", num: 1, f: r => r.n_init_win_sentinel_to_nan.toLocaleString()},
+    {h: "Dropped: negative values", num: 1, f: r => r.n_dropped_negative_values.toLocaleString()},
+    {h: "Dropped: duplicates", num: 1, f: r => r.n_duplicates_dropped.toLocaleString()},
+    {h: "Kept", num: 1, f: r => r.n_rows_kept.toLocaleString()}], rep.files)
+    + (rep.nrows_limit_per_file ? banner(`Only the first ${rep.nrows_limit_per_file.toLocaleString()} rows per file were read (partial sample).`) : "")
+    + `<p class="muted small">Duplicates are exact repeats of the forward-only feature vector plus label; many distinct bidirectional flows collapse to the same forward vector. Check sensitivity by registering without dropping duplicates.</p>`;
+  else if (rep.notice) h += banner(esc(rep.notice));
+  const cols = prev.columns.map(c => ({h: c, f: r => esc(typeof r[c] === "number" ? num(r[c]) : r[c])}));
+  h += `<h4>Preview (first ${prev.rows.length} of ${prev.total.toLocaleString()} records)</h4>${table(cols, prev.rows)}
+  <div class="row"><a class="btn" href="#/statistics?ds=${esc(ds.id)}">Statistical analysis</a><a class="btn sec" href="#/models?ds=${esc(ds.id)}">Train a model</a></div></div>`;
+  return h;
+};
+
+V.statistics = st => {
+  const t = st.hypothesis_tests, rows = t.rows.filter(r => r.status === "ok");
+  const sig = rows.filter(r => r.mannwhitney_p_bh < 0.05), large = rows.filter(r => Math.abs(r.rank_biserial) >= 0.3);
+  const top = rows[0];
+  let h = `<div class="grid">${stat(st.n_records.toLocaleString(), "records")}${stat(st.n_numeric_features, "numeric features")}
+  ${stat(st.n_categorical_features, "categorical features")}${stat(Object.keys(st.class_distribution.counts).length, "classes")}</div>
+  ${directionBanner(st.directionality)}<div class="card"><h3>Class distribution</h3>${classBars(st.class_distribution)}</div>
+  <div class="card"><h3>Descriptive statistics</h3><p class="muted small">Computed on all ${st.n_records.toLocaleString()} records. Skewed counts are better summarised by median and IQR than by mean and standard deviation. Click a header to sort.</p>
+  <input class="tfilter" data-for="descTbl" placeholder="Filter features">` + table([
+    {h: "Feature", f: r => esc(r.feature), v: r => r.feature}, {h: "n", num: 1, f: r => r.n.toLocaleString(), v: r => r.n},
+    {h: "Missing", num: 1, f: r => r.missing.toLocaleString(), v: r => r.missing},
+    ...["mean", "median", "std", "iqr", "skewness", "kurtosis", "min", "max"].map(k => ({h: k, num: 1, f: r => num(r[k]), v: r => r[k] ?? ""}))],
+    st.descriptive, {id: "descTbl", sortable: 1}) + `</div>
+  <div class="card"><h3>Malicious vs benign: hypothesis tests</h3>
+  <p><b>H0:</b> ${esc(t.null)}. <b>H1:</b> the distributions differ (two-sided, &alpha; = ${t.alpha}). Tests: ${esc(t.tests)}. Groups: ${esc(t.group_1)} vs ${esc(t.group_2)}. Rows used: ${t.n_rows_used.toLocaleString()}${t.sampled ? ` (seeded random sample, seed ${t.sample_seed})` : " (all)"}.
+  Benjamini-Hochberg correction family: ${esc(t.bh_family)}. Sorted by |rank-biserial| (effect size).</p>` + table([
+    {h: "Feature", f: r => esc(r.feature), v: r => r.feature},
+    {h: "Median mal.", num: 1, f: r => num(r.median1), v: r => r.median1 ?? ""}, {h: "Median benign", num: 1, f: r => num(r.median2), v: r => r.median2 ?? ""},
+    {h: "Rank-biserial", num: 1, f: r => num(r.rank_biserial), v: r => r.rank_biserial ?? ""},
+    {h: "Cohen's d", num: 1, f: r => num(r.cohens_d), v: r => r.cohens_d ?? ""},
+    {h: "Mean diff 95% CI", f: r => ci(r.mean_diff_ci)},
+    {h: "Welch p", num: 1, f: r => pval(r.welch_p), v: r => r.welch_p ?? ""},
+    {h: "MWU p", num: 1, f: r => pval(r.mannwhitney_p), v: r => r.mannwhitney_p ?? ""},
+    {h: "MWU p (BH adj.)", num: 1, f: r => pval(r.mannwhitney_p_bh), v: r => r.mannwhitney_p_bh ?? ""},
+    {h: "Note", f: r => r.status === "ok" ? "" : esc(r.message || r.status)}], t.rows, {sortable: 1}) +
+  (st.constant_features_excluded_from_tests.length ? `<p class="muted small">Constant features excluded: ${esc(st.constant_features_excluded_from_tests.join(", "))}.</p>` : "") +
+  `<h4>Interpretation (generated from the computed results)</h4>` + (rows.length
+    ? `<p>${sig.length} of ${rows.length} tested features differ between malicious and benign records at BH-adjusted p &lt; 0.05; ${large.length} have a large rank-based effect (|r| &ge; 0.3).
+       The largest effect is <b>${esc(top.feature)}</b> (rank-biserial ${num(top.rank_biserial)}; median ${num(top.median1)} malicious vs ${num(top.median2)} benign). This describes this sample only.</p>`
+    : `<p class="muted">No tests could be computed (both classes with enough variation are required).</p>`) +
+  `<ul class="small muted">${t.caveats.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>`;
+  if (st.chi_square.length) h += `<div class="card"><h3>Categorical association with label (chi-square)</h3>` + table([
+    {h: "Variable", f: r => esc(r.variable)}, {h: "Status", f: r => esc(r.status)}, {h: "n", num: 1, f: r => num(r.n)}, {h: "chi2", num: 1, f: r => num(r.chi2)},
+    {h: "dof", num: 1, f: r => num(r.dof)}, {h: "p", num: 1, f: r => pval(r.p)}, {h: "Cramér's V", num: 1, f: r => num(r.cramers_v)},
+    {h: "Min expected", num: 1, f: r => num(r.min_expected_count)}, {h: "Warnings", f: r => esc((r.warnings || []).join(" "))}], st.chi_square) + `</div>`;
+  h += `<div class="card"><h3>Feature distribution by class</h3><div class="row"><label>Feature<select id="distFeat">${st.descriptive.map(r => `<option>${esc(r.feature)}</option>`).join("")}</select></label>
+    <label class="inline"><input type="checkbox" id="distLog"> log1p transform</label></div><div id="distBox" class="muted">Loading…</div></div>`;
+  const c = st.correlation;
+  h += `<div class="card"><h3>Spearman correlation (rank-based)</h3><p class="muted small">Computed on up to ${t.n_rows_used.toLocaleString()} rows. Correlation is not causation and does not by itself show predictive value. Strongly correlated features are redundant.</p>
+    <div class="scroll"><table class="heat"><thead><tr><th></th>${c.features.map((f, i) => `<th title="${esc(f)}">${i + 1}</th>`).join("")}</tr></thead><tbody>` +
+    c.matrix.map((r, i) => `<tr><th style="text-align:left" title="${esc(c.features[i])}">${i + 1}. ${esc(c.features[i])}</th>` + r.map((v, j) => {
+      const a = v === null ? 0 : Math.abs(v), col = v === null ? "#EEE" : (v >= 0 ? `rgba(49,91,120,${a})` : `rgba(180,60,60,${a})`);
+      return `<td style="background:${col};color:${a > .55 ? "#fff" : "#202B36"}" title="${esc(c.features[i])} × ${esc(c.features[j])}: ${v === null ? "n/a" : v.toFixed(3)}">${v === null ? "" : v.toFixed(2)}</td>`; }).join("") + "</tr>").join("") +
+    `</tbody></table></div><p class="small muted">Blue = positive, red = negative; darker = stronger.</p></div>
+    <div class="card"><h3>Download</h3><a class="btn sec" href="/api/exports/statistics/${esc(st.dataset_id)}?part=tests">Hypothesis tests (CSV)</a>
+    <a class="btn sec" href="/api/exports/statistics/${esc(st.dataset_id)}?part=descriptive">Descriptive statistics (CSV)</a></div>`;
+  return h;
+};
+
+V.distribution = d => {
+  const W = 640, H = 220, P = 30, n = d.edges.length - 1, bw = (W - 2 * P) / n, B = d.groups.benign, M = d.groups.malicious;
+  const max = Math.max(...B.density, ...M.density, 1e-9);
+  const rects = (g, col, off) => g.density.map((v, i) => `<rect x="${(P + i * bw + off).toFixed(1)}" y="${(H - P - v / max * (H - 2 * P)).toFixed(1)}" width="${(bw / 2 - 0.5).toFixed(1)}" height="${(v / max * (H - 2 * P)).toFixed(1)}" fill="${col}"/>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Distribution of ${esc(d.feature)} by class">
+    ${rects(B, "#315B78", 0)}${rects(M, "#B43C3C", bw / 2)}<line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#647180"/>
+    <text x="${P}" y="${H - 12}" font-size="11" fill="#647180">${num(d.edges[0])}</text><text x="${W - P}" y="${H - 12}" font-size="11" text-anchor="end" fill="#647180">${num(d.edges[n])}</text>
+    <text x="${W / 2}" y="${H - 2}" font-size="11" text-anchor="middle" fill="#647180">${esc(d.feature)} (${esc(d.transform)}) &mdash; bar height = share of that class</text></svg>
+    <p><span class="dot" style="background:#315B78"></span>benign (n=${B.n.toLocaleString()}) <span class="dot" style="background:#B43C3C"></span>malicious (n=${M.n.toLocaleString()})</p>
+    <p class="muted small">${esc(d.note)}</p>`;
+};
+
+V.trainForm = (datasets, preset) => {
+  const real = datasets;
+  if (!real.length) return `<div class="card"><p>No dataset registered yet. <a class="link" href="#/datasets">Register one first.</a></p></div>`;
+  const opt = (sel) => real.map(d => `<option value="${esc(d.id)}" ${d.id === sel ? "selected" : ""}>${esc(d.name)} (${d.n_rows.toLocaleString()} rows${d.kind === "synthetic" ? ", synthetic" : ""})</option>`).join("");
+  return `<div class="card"><h3>Train and evaluate</h3><div class="row">
+    <label>Training dataset<select id="trDs">${opt(preset)}</select></label>
+    <label>Test dataset<select id="trTest"><option value="">none: random stratified split of the training dataset</option>${opt("")}</select></label></div>
+    <p class="muted small">A separate test dataset (for example a different capture day) gives a stricter evaluation than a random split. 20% of the training data is held out as validation for threshold selection and model selection.</p>
+    <div class="row"><label class="inline"><input type="checkbox" class="trModel" value="dummy" checked> Dummy baseline</label>
+    <label class="inline"><input type="checkbox" class="trModel" value="logreg" checked> Logistic Regression</label>
+    <label class="inline"><input type="checkbox" class="trModel" value="rf" checked> Random Forest</label>
+    <label>Seed<input id="trSeed" type="number" value="42" style="min-width:80px"></label>
+    <label>Max validation FPR<input id="trFpr" type="number" value="0.05" step="0.01" min="0.001" max="0.5" style="min-width:80px"></label></div>
+    <h4>Ablation: features to exclude (optional)</h4><div id="trFeats" class="row"></div>
+    <button class="btn" id="trGo">Start training</button></div>`;
+};
+
+V.runs = runs => `<div class="card"><h3>Training runs</h3>` + table([
+  {h: "Run", f: r => `<span class="mono">${esc(r.id)}</span>`}, {h: "Status", f: r => badge(r.status, r.status === "completed" ? "ok" : r.status === "failed" ? "bad" : "warn")},
+  {h: "Strategy", f: r => r.test_dataset_id ? "separate test dataset" : "random split"},
+  {h: "Ablation", f: r => esc((r.config.drop_features || []).join(", ") || "none")},
+  {h: "Selected (validation)", f: r => esc(r.selected_model || "")}, {h: "Created", f: r => date(r.created_at)}],
+  runs.map(r => ({...r, _attr: `class="click" data-id="${esc(r.id)}"`}))) + `<p class="muted small">Click a run to view its evaluation.</p></div>`;
+
+V.runDetail = (run, activeId) => {
+  let h = `<div class="card"><h3>Run <span class="mono">${esc(run.id)}</span></h3>`;
+  if (run.status !== "completed") return h + (run.status === "failed"
+    ? banner(`Training failed: ${esc(run.error)}`, "bad") : `<p>Status: ${esc(run.status)}. This page refreshes automatically.</p>`) + `</div>`;
+  const ev = run.evaluation, sp = ev.split, f = ev.features;
+  h += `<p>Strategy: <b>${esc(sp.strategy)}</b> &middot; train ${sp.train.toLocaleString()} &middot; validation ${sp.val.toLocaleString()} &middot; test ${sp.test.toLocaleString()}</p>
+    <p class="small muted">Features used (${f.numeric.length + f.categorical.length}): ${esc(f.numeric.concat(f.categorical).join(", "))}.
+    ${f.dropped_by_request.length ? `Dropped by request: ${esc(f.dropped_by_request.join(", "))}.` : ""} ${f.constant_removed.length ? `Constant (removed): ${esc(f.constant_removed.join(", "))}.` : ""}</p>
+    <p class="small muted">Selection rule: ${esc(ev.selection_rule)}. Thresholds were chosen on validation data, the test set was used once.</p>
+    <h4>Held-out test results</h4>` + table([
+    {h: "Model", f: m => esc(m.algorithm) + (m.model_id === ev.selected_model ? " " + badge("selected", "ok") : "") + (m.model_id === activeId ? " " + badge("active", "ok") : "")},
+    {h: "Accuracy", num: 1, f: m => num(m.test.accuracy)}, {h: "Precision", num: 1, f: m => num(m.test.precision)},
+    {h: "Recall", num: 1, f: m => num(m.test.recall)}, {h: "Recall 95% CI", f: m => ci(m.test_ci95.recall)},
+    {h: "F1", num: 1, f: m => num(m.test.f1)}, {h: "Macro F1", num: 1, f: m => num(m.test.macro_f1)},
+    {h: "FPR", num: 1, f: m => num(m.test.fpr, 4)}, {h: "FPR 95% CI", f: m => ci(m.test_ci95.fpr)},
+    {h: "ROC-AUC", num: 1, f: m => num(m.test.roc_auc)}, {h: "PR-AUC", num: 1, f: m => num(m.test.pr_auc)},
+    {h: "Threshold", num: 1, f: m => num(m.test.threshold, 4)}, {h: "Train s", num: 1, f: m => num(m.train_seconds, 2)},
+    {h: "Test n", num: 1, f: m => m.test.n.toLocaleString()},
+    {h: "", f: m => m.algorithm === "dummy" ? "" : `<button class="btn sec promote" data-id="${esc(m.model_id)}">Make active</button>`}], ev.models) +
+    `<p class="muted small">Bootstrap CIs resample test records with replacement and assume independent records. A CI collapsed to a single value means no misses/false alarms were observed in this sample, not certainty. n/a means the value cannot be computed (for example, a class is missing from the test set).</p>
+    <h4>Confusion matrices (test set)</h4><div class="row">` + ev.models.map(m => { const c = m.test.confusion_matrix; return `<div><b>${esc(m.algorithm)}</b>
+    <table class="cm"><tr><th></th><th>pred. benign</th><th>pred. malicious</th></tr><tr><th>actual benign</th><td class="tn">${c.tn.toLocaleString()}<br><span class="small">true negatives</span></td><td class="fp">${c.fp.toLocaleString()}<br><span class="small">false positives</span></td></tr>
+    <tr><th>actual malicious</th><td class="fn">${c.fn.toLocaleString()}<br><span class="small">false negatives (missed)</span></td><td class="tp">${c.tp.toLocaleString()}<br><span class="small">true positives</span></td></tr></table></div>`; }).join("") + `</div>
+    <p class="muted small">False positives waste analyst time; false negatives are attacks the model missed.</p>`;
+  const imp = ev.permutation_importance_test_set;
+  h += imp ? `<h4>Permutation importance of the selected model (drop in PR-AUC on the test set)</h4>${bars(imp.slice(0, 10).map(i => ({label: i.feature, value: Math.max(i.mean_drop_pr_auc, 0), text: num(i.mean_drop_pr_auc, 4)})))}
+    <p class="muted small">Importance describes how the model behaves, not why attacks happen. Features such as TCP window size or minimum segment size can identify the sending machine rather than attack behaviour; use the ablation option to test reliance on them.</p>`
+    : `<p class="muted small">Importance unavailable (for example the test set contains a single class).</p>`;
+  return h + `<ul class="small muted">${ev.limitations.map(l => `<li>${esc(l)}</li>`).join("")}</ul>
+    <a class="btn sec" href="/api/exports/evaluation/${esc(run.id)}">Download evaluation (JSON)</a></div>`;
+};
+
+V.analysisBar = (analyses, sel) => analyses.length ? `<label>Analysis<select id="exAn">${analyses.map(a => `<option value="${esc(a.id)}" ${a.id === sel ? "selected" : ""}>${esc(a.id)} &middot; ${date(a.created_at)} &middot; ${a.n_records.toLocaleString()} records</option>`).join("")}</select></label>` : "";
+
+V.analysisSummary = a => `<div class="card"><p class="mono">${esc(a.id)} &middot; model ${esc(a.model_id)} &middot; threshold ${num(a.params.threshold, 4)}</p>
+  ${a.params.warning ? banner(esc(a.params.warning)) : ""}
+  <p>${a.n_records.toLocaleString()} records: ${a.n_malicious.toLocaleString()} predicted malicious, ${a.n_benign.toLocaleString()} predicted benign. ${a.params.n_alerts.toLocaleString()} alerts created${a.params.n_alerts_suppressed ? `, ${a.params.n_alerts_suppressed.toLocaleString()} further malicious predictions beyond the alert cap` : ""}.</p></div>`;
+
+V.records = r => {
+  const keys = ["row_idx", "probability", "predicted", "actual", "category", "flow_id", "source_file", "protocol", "src_ip", "src_port", "dst_ip", "dst_port", "packet_count", "byte_count", "duration"];
+  const used = keys.filter(k => r.rows.some(x => x[k] !== null && x[k] !== undefined));
+  const lab = {row_idx: "Row", probability: "P(malicious)", predicted: "Predicted", actual: "Actual label", category: "Attack category"};
+  const pages = Math.max(1, Math.ceil(r.total / r.page_size));
+  return `<p>${r.total.toLocaleString()} records match. Page ${r.page} of ${pages}.</p>` + table(used.map(k => ({h: lab[k] || k, num: ["probability", "packet_count", "byte_count", "duration"].includes(k),
+    f: x => k === "probability" ? num(x[k], 4) : k === "predicted" ? badge(x[k], x[k] === "malicious" ? "bad" : "ok") : (typeof x[k] === "number" ? num(x[k]) : esc(x[k]))})),
+    r.rows.map(x => ({...x, _attr: `class="click" data-row="${esc(x.row_idx)}"`}))) +
+    `<div class="pager"><button class="btn sec" id="pgPrev" ${r.page <= 1 ? "disabled" : ""}>Previous</button><button class="btn sec" id="pgNext" ${r.page >= pages ? "disabled" : ""}>Next</button></div>
+    ${r.labels_available ? "" : `<p class="muted small">This dataset has no ground-truth labels.</p>`}`;
+};
+
+V.recordDetail = d => `<div class="card"><h3>Record ${esc(d.row_idx)} <span class="mono muted">${esc(d.analysis_id)}</span></h3>
+  <p><b>Predicted:</b> ${badge(d.prediction.predicted_label, d.prediction.predicted_label === "malicious" ? "bad" : "ok")} &middot; P(malicious) ${num(d.prediction.probability_malicious, 4)} (threshold ${num(d.prediction.threshold, 4)}) &middot; model <span class="mono">${esc(d.model_id)}</span></p>
+  <p><b>Actual label in dataset:</b> ${esc(d.actual_label ?? "not available")} ${d.attack_category ? `&middot; category ${esc(d.attack_category)}` : ""}</p>
+  <p class="muted small">${esc(d.prediction.note)} A confident prediction is not necessarily a correct one.</p>
+  <p><b>Provenance:</b> dataset ${esc(d.provenance.dataset_id)}, file ${esc(d.provenance.source_file ?? "n/a")}, source row ${esc(d.provenance.source_row ?? "n/a")}</p>
+  <p><b>Alerts:</b> ${d.alerts.length ? d.alerts.map(a => `#${a.id} ${badge(a.priority + " priority", a.priority === "high" ? "bad" : "warn")} ${badge(a.status)}`).join(" ") : "none"}</p>` +
+  table([{h: "Field", f: r => esc(r[0])}, {h: "Value", f: r => typeof r[1] === "number" ? num(r[1], 6) : esc(r[1])}], Object.entries(d.record)) +
+  (d.global_feature_importance ? `<h4>Global feature importance of this model</h4>${bars(d.global_feature_importance.slice(0, 6).map(i => ({label: i.feature, value: Math.max(i.mean_drop_pr_auc, 0), text: num(i.mean_drop_pr_auc, 4)})))}` : "") +
+  `<p class="muted small">${esc(d.explanation_note)}</p></div>`;
+
+V.alerts = al => {
+  const st = ["new", "under_review", "resolved", "dismissed"], pages = Math.max(1, Math.ceil(al.total / al.page_size));
+  return `<p>${al.total.toLocaleString()} alerts. Page ${al.page} of ${pages}.</p>` + table([
+    {h: "#", f: a => a.id}, {h: "Priority", f: a => badge(a.priority === "high" ? "High priority" : "Medium priority", a.priority === "high" ? "bad" : "warn")},
+    {h: "P(malicious)", num: 1, f: a => num(a.probability, 4)}, {h: "Predicted", f: a => badge("malicious", "bad")},
+    {h: "Actual label", f: a => esc(a.actual_label ?? "n/a")}, {h: "Category", f: a => esc(a.attack_category ?? "")},
+    {h: "Analysis / row", f: a => `<a class="link view" data-an="${esc(a.analysis_id)}" data-row="${esc(a.row_idx)}">${esc(a.analysis_id)} / ${esc(a.row_idx)}</a>`},
+    {h: "Review status", f: a => `<select class="alSt" data-id="${a.id}">${st.map(s => `<option value="${s}" ${s === a.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}</select>`},
+    {h: "Note", f: a => `<input class="alNote" data-id="${a.id}" value="${esc(a.note)}" maxlength="1000" placeholder="investigation note">`},
+    {h: "", f: a => `<button class="btn sec alSave" data-id="${a.id}">Save</button>`}], al.rows) +
+    `<div class="pager"><button class="btn sec" id="pgPrev" ${al.page <= 1 ? "disabled" : ""}>Previous</button><button class="btn sec" id="pgNext" ${al.page >= pages ? "disabled" : ""}>Next</button></div>
+    <p class="muted small">${esc(al.policy)} "Resolved" means the analyst closed the review; it does not mean an attack was independently confirmed.</p>`;
+};
+
+V.reports = (runs, datasets) => `<h2>Reports</h2><p class="muted">Exports contain the computed results of the selected run or dataset.</p>
+  <div class="card"><h3>Model evaluation reports (JSON)</h3>${table([{h: "Run", f: r => `<span class="mono">${esc(r.id)}</span>`}, {h: "Created", f: r => date(r.created_at)},
+    {h: "Ablation", f: r => esc((r.config.drop_features || []).join(", ") || "none")}, {h: "Download", f: r => `<a class="link" href="/api/exports/evaluation/${esc(r.id)}">evaluation JSON</a>`}],
+    runs.filter(r => r.status === "completed"))}</div>
+  <div class="card"><h3>Statistical analysis exports (CSV)</h3>${table([{h: "Dataset", f: d => esc(d.name)}, {h: "ID", f: d => `<span class="mono">${esc(d.id)}</span>`},
+    {h: "Download", f: d => `<a class="link" href="/api/exports/statistics/${esc(d.id)}?part=tests">hypothesis tests</a> &middot; <a class="link" href="/api/exports/statistics/${esc(d.id)}?part=descriptive">descriptive statistics</a>`}], datasets)}</div>
+  <div class="card"><h3>Alerts (CSV)</h3><a class="btn sec" href="/api/exports/alerts">Download all alerts</a></div>`;
+
+V.system = s => `<h2>System Information</h2><div class="card">` + table([{h: "Item", f: r => esc(r[0])}, {h: "Value", f: r => esc(typeof r[1] === "object" ? JSON.stringify(r[1]) : r[1])}],
+  [["Application", `${s.application} ${s.version}`], ["Backend", s.backend], ["Database", `${s.database} (${s.database_path})`], ["Storage folder", s.storage_dir],
+   ["Data folder", s.data_dir], ["Active model", s.active_model ?? "none"], ["Active model file present", s.active_model_file_present], ["Record counts", s.counts],
+   ["Supported input", s.supported_input], ["Live packet capture", s.live_packet_capture], ["Alert policy", s.alert_policy], ["Security controls", s.security_controls.join("; ")]]) + `</div>`;
+
+if (typeof module !== "undefined") module.exports = V;
+
+// ------------------------------------------------------------------ app shell (browser only)
+if (typeof document !== "undefined") (function () {
+  const $ = (s, el = document) => el.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const main = $("#main"); let timers = [];
+  const ROUTES = [["overview", "Overview"], ["datasets", "Dataset Lab"], ["statistics", "Statistical Analysis"], ["models", "Model Laboratory"],
+    ["explorer", "Traffic Explorer"], ["alerts", "Detection Alerts"], ["reports", "Reports"], ["system", "System Information"]];
+  async function api(path, opts = {}) {
+    const r = await fetch(path, {method: opts.method || "GET", headers: {"Content-Type": "application/json"}, body: opts.body ? JSON.stringify(opts.body) : undefined});
+    const text = await r.text(); let j = null; try { j = JSON.parse(text); } catch (e) { /* not json */ }
+    if (!r.ok) { const d = j && j.detail; throw new Error(Array.isArray(d) ? d.map(x => (x.loc || []).slice(1).join(".") + ": " + x.msg).join("; ") : (d || `HTTP ${r.status}`)); }
+    return j;
+  }
+  function toast(msg, bad) { const d = document.createElement("div"); if (bad) d.className = "bad"; d.textContent = msg; $("#toast").appendChild(d); setTimeout(() => d.remove(), bad ? 8000 : 3500); }
+  const guard = fn => async (...a) => { try { return await fn(...a); } catch (e) { toast(e.message, true); } };
+  function params() { return new URLSearchParams((location.hash.split("?")[1]) || ""); }
+  function enhanceTables(root) {
+    $$("table.sortable", root).forEach(t => $$("th", t).forEach(th => th.addEventListener("click", () => {
+      const i = +th.dataset.i, dir = th.dataset.dir === "asc" ? -1 : 1, tb = $("tbody", t);
+      th.dataset.dir = dir === 1 ? "asc" : "desc";
+      const rows = $$("tr", tb).sort((a, b) => { const x = a.children[i].dataset.v, y = b.children[i].dataset.v, nx = parseFloat(x), ny = parseFloat(y);
+        return dir * ((!isNaN(nx) && !isNaN(ny)) ? nx - ny : x.localeCompare(y)); });
+      rows.forEach(r => tb.appendChild(r)); })));
+    $$(".tfilter", root).forEach(inp => inp.addEventListener("input", () => { const q = inp.value.toLowerCase();
+      $$("#" + inp.dataset.for + " tbody tr").forEach(tr => tr.hidden = !tr.textContent.toLowerCase().includes(q)); }));
+  }
+  const setHtml = (el, html) => { el.innerHTML = html; enhanceTables(el); };
+  const P = {};
+
+  P.overview = async el => setHtml(el, V.overview(await api("/api/overview")));
+
+  P.datasets = async el => {
+    el.innerHTML = `<h2>Dataset Lab</h2><p class="muted">Register, inspect and validate datasets before analysis. Directionality is declared from the dataset's documented semantics, not guessed from column names.</p><div id="f"></div><div id="l"></div><div id="d"></div>`;
+    const [files, list] = await Promise.all([api("/api/datasets/files"), api("/api/datasets")]);
+    $("#f", el).innerHTML = V.datasetForm(files.files, files.data_dir);
+    setHtml($("#l", el), V.datasetList(list));
+    const kind = $("#dsKind", el), sync = () => { $("#cicBox", el).hidden = kind.value !== "cic2017_forward"; $("#synBox", el).hidden = kind.value !== "synthetic"; };
+    kind.addEventListener("change", sync); sync();
+    $("#dsGo", el).addEventListener("click", guard(async () => {
+      const b = $("#dsGo", el), body = {name: $("#dsName", el).value, kind: kind.value};
+      if (body.kind === "cic2017_forward") { body.files = $$(".dsFile:checked", el).map(x => x.value); const n = $("#dsRows", el).value; if (n) body.nrows = +n; body.drop_duplicates = $("#dsDedup", el).checked; }
+      else body.n = +$("#synN", el).value;
+      b.disabled = true; b.textContent = "Loading and cleaning… (large files can take a minute)";
+      try { const ds = await api("/api/datasets", {method: "POST", body}); toast("Dataset registered"); await P.datasets(el); await show(ds.id); }
+      finally { b.disabled = false; b.textContent = "Register dataset"; }
+    }));
+    async function show(id) { const [ds, prev] = await Promise.all([api("/api/datasets/" + id), api(`/api/datasets/${id}/preview?limit=20`)]); setHtml($("#d", el), V.datasetDetail(ds, prev)); $("#d", el).scrollIntoView(); }
+    $$("tr.click", el).forEach(tr => tr.addEventListener("click", guard(() => show(tr.dataset.id))));
+  };
+
+  P.statistics = async el => {
+    const list = await api("/api/datasets"), pre = params().get("ds");
+    el.innerHTML = `<h2>Statistical Analysis</h2><p class="muted">Descriptive statistics, class balance, distributions, correlation and malicious-vs-benign hypothesis tests computed from the stored dataset.</p>
+      ${list.length ? `<div class="row"><label>Dataset<select id="sDs">${list.map(d => `<option value="${esc(d.id)}" ${d.id === pre ? "selected" : ""}>${esc(d.name)} (${d.n_rows.toLocaleString()} rows)</option>`).join("")}</select></label><button class="btn" id="sGo">Analyse</button></div>` : `<div class="card"><p>No dataset registered yet. <a class="link" href="#/datasets">Register one first.</a></p></div>`}<div id="out"></div>`;
+    if (!list.length) return;
+    $("#sGo", el).addEventListener("click", guard(async () => {
+      const id = $("#sDs", el).value, out = $("#out", el), b = $("#sGo", el); b.disabled = true; out.innerHTML = `<p class="muted">Computing… (large datasets can take a minute)</p>`;
+      try { setHtml(out, V.statistics(await api("/api/statistics/" + id))); } finally { b.disabled = false; }
+      const draw = guard(async () => { $("#distBox", out).innerHTML = V.distribution(await api(`/api/statistics/${id}/distribution?feature=${encodeURIComponent($("#distFeat", out).value)}&log=${$("#distLog", out).checked}`)); });
+      $("#distFeat", out).addEventListener("change", draw); $("#distLog", out).addEventListener("change", draw); draw();
+    }));
+    if (pre) $("#sGo", el).click();
+  };
+
+  P.models = async el => {
+    const [list, runs, models] = await Promise.all([api("/api/datasets"), api("/api/models/runs"), api("/api/models")]), pre = params().get("ds");
+    el.innerHTML = `<h2>Model Laboratory</h2><p class="muted">Train a baseline and classifiers, choose thresholds on validation data, and evaluate once on held-out records.</p><div id="tf">${V.trainForm(list, pre)}</div><div id="rl"></div><div id="rd"></div>`;
+    const active = (models.find(m => m.is_active) || {}).id;
+    let cur = null;
+    async function refresh() { const rs = await api("/api/models/runs"); setHtml($("#rl", el), V.runs(rs)); bindRuns();
+      if (cur) { const run = await api("/api/models/runs/" + cur), ms = await api("/api/models"); setHtml($("#rd", el), V.runDetail(run, (ms.find(m => m.is_active) || {}).id)); bindPromote(); }
+      return rs; }
+    function bindRuns() { $$("#rl tr.click", el).forEach(tr => tr.addEventListener("click", guard(async () => { cur = tr.dataset.id; await refresh(); $("#rd", el).scrollIntoView(); }))); }
+    function bindPromote() { $$(".promote", el).forEach(b => b.addEventListener("click", guard(async () => { await api(`/api/models/${b.dataset.id}/promote`, {method: "POST"}); toast("Active model updated"); await refresh(); }))); }
+    setHtml($("#rl", el), V.runs(runs)); bindRuns();
+    if (!list.length) return;
+    const fillFeats = guard(async () => { const d = await api("/api/datasets/" + $("#trDs", el).value);
+      $("#trFeats", el).innerHTML = d.features.numeric.map(f => `<label class="inline"><input type="checkbox" class="trDrop" value="${esc(f)}"> ${esc(f)}</label>`).join(""); });
+    $("#trDs", el).addEventListener("change", fillFeats); fillFeats();
+    $("#trGo", el).addEventListener("click", guard(async () => {
+      const body = {dataset_id: $("#trDs", el).value, test_dataset_id: $("#trTest", el).value || null, models: $$(".trModel:checked", el).map(x => x.value),
+        drop_features: $$(".trDrop:checked", el).map(x => x.value), seed: +$("#trSeed", el).value, max_fpr: +$("#trFpr", el).value};
+      const r = await api("/api/models/train", {method: "POST", body}); cur = r.id; toast("Training started"); await refresh();
+    }));
+    timers.push(setInterval(guard(async () => { const rs = await api("/api/models/runs"); if (rs.some(r => r.status === "queued" || r.status === "running") || (cur && rs.find(r => r.id === cur && !$("#rd table", el)))) await refresh(); }), 3000));
+    if (active) $("#rl", el).insertAdjacentHTML("afterbegin", `<p class="muted small">Active inference model: <span class="mono">${esc(active)}</span></p>`);
+  };
+
+  P.explorer = async el => {
+    const [list, analyses, models] = await Promise.all([api("/api/datasets"), api("/api/analyses"), api("/api/models")]);
+    const active = models.find(m => m.is_active);
+    el.innerHTML = `<h2>Traffic Explorer</h2><p class="muted">Run the active model over a dataset, then inspect each record. Actual labels (dataset ground truth) are shown separately from predictions.</p>
+      <div class="card"><h3>New analysis</h3>${active ? `<p>Active model: <span class="mono">${esc(active.id)}</span></p>` : banner("No active model. Train and promote a model in the Model Laboratory first.")}
+      ${list.length && active ? `<div class="row"><label>Dataset<select id="nDs">${list.map(d => `<option value="${esc(d.id)}">${esc(d.name)} (${d.n_rows.toLocaleString()} rows)</option>`).join("")}</select></label>
+      <label>Max alerts<input id="nAl" type="number" value="1000" min="0" max="20000" style="min-width:90px"></label><button class="btn" id="nGo">Run predictions</button></div>` : ""}</div>
+      <div class="row">${V.analysisBar(analyses, params().get("an"))}</div><div id="sum"></div>
+      <div class="card" id="flt" hidden><div class="row"><label>Predicted<select id="fP"><option value="">any</option><option>malicious</option><option>benign</option></select></label>
+      <label>Actual<select id="fA"><option value="">any</option><option>malicious</option><option>benign</option></select></label>
+      <label>Attack category<input id="fC" placeholder="e.g. FTP-Patator"></label><label>Min P(malicious)<input id="fMin" type="number" step="0.05" min="0" max="1" style="min-width:90px"></label>
+      <label>Sort<select id="fS"><option value="prob_desc">probability, high first</option><option value="prob_asc">probability, low first</option><option value="row">row order</option></select></label>
+      <button class="btn" id="fGo">Apply</button></div><div id="tbl"></div></div><div id="det"></div>`;
+    $("#nGo", el)?.addEventListener("click", guard(async () => { const b = $("#nGo", el); b.disabled = true; b.textContent = "Predicting…";
+      try { const a = await api("/api/analyses", {method: "POST", body: {dataset_id: $("#nDs", el).value, max_alerts: +$("#nAl", el).value}}); toast("Analysis complete"); location.hash = "#/explorer?an=" + a.id; await P.explorer(el); }
+      finally { b.disabled = false; } }));
+    const sel = $("#exAn", el); if (!sel) return;
+    let page = 1;
+    const load = guard(async () => { const aid = sel.value, q = new URLSearchParams({page, page_size: 25, sort: $("#fS", el).value});
+      [["predicted", "#fP"], ["actual", "#fA"], ["category", "#fC"], ["min_prob", "#fMin"]].forEach(([k, s]) => { const v = $(s, el).value.trim(); if (v) q.set(k, v); });
+      setHtml($("#tbl", el), V.records(await api(`/api/analyses/${aid}/records?${q}`)));
+      $("#pgPrev", el)?.addEventListener("click", () => { page--; load(); }); $("#pgNext", el)?.addEventListener("click", () => { page++; load(); });
+      $$("#tbl tr.click", el).forEach(tr => tr.addEventListener("click", guard(async () => { $$("#tbl tr.sel", el).forEach(x => x.classList.remove("sel")); tr.classList.add("sel");
+        $("#det", el).innerHTML = V.recordDetail(await api(`/api/analyses/${aid}/records/${tr.dataset.row}`)); $("#det", el).scrollIntoView(); }))); });
+    const open = guard(async () => { page = 1; $("#sum", el).innerHTML = V.analysisSummary(await api("/api/analyses/" + sel.value)); $("#flt", el).hidden = false; $("#det", el).innerHTML = ""; await load(); });
+    sel.addEventListener("change", open); $("#fGo", el).addEventListener("click", () => { page = 1; load(); }); open();
+  };
+
+  P.alerts = async el => {
+    el.innerHTML = `<h2>Detection Alerts</h2><p class="muted">Records predicted malicious by the model, for analyst review. An alert is a lead, not a confirmed incident.</p>
+      <div class="row"><label>Status<select id="aS"><option value="">any</option><option value="new">new</option><option value="under_review">under review</option><option value="resolved">resolved</option><option value="dismissed">dismissed</option></select></label>
+      <label>Priority<select id="aP"><option value="">any</option><option value="high">high</option><option value="medium">medium</option></select></label><button class="btn" id="aGo">Apply</button>
+      <a class="btn sec" id="aEx" href="/api/exports/alerts">Export CSV</a></div><div id="tbl"></div><div id="det"></div>`;
+    let page = 1;
+    const load = guard(async () => { const q = new URLSearchParams({page, page_size: 25}); if ($("#aS", el).value) q.set("status", $("#aS", el).value); if ($("#aP", el).value) q.set("priority", $("#aP", el).value);
+      $("#aEx", el).href = "/api/exports/alerts" + ($("#aS", el).value ? "?status=" + $("#aS", el).value : "");
+      setHtml($("#tbl", el), V.alerts(await api("/api/alerts?" + q)));
+      $("#pgPrev", el)?.addEventListener("click", () => { page--; load(); }); $("#pgNext", el)?.addEventListener("click", () => { page++; load(); });
+      $$(".alSave", el).forEach(b => b.addEventListener("click", guard(async () => { const id = b.dataset.id;
+        await api("/api/alerts/" + id, {method: "PATCH", body: {status: $(`.alSt[data-id="${id}"]`, el).value, note: $(`.alNote[data-id="${id}"]`, el).value}}); toast("Alert " + id + " updated"); })));
+      $$(".view", el).forEach(a => a.addEventListener("click", guard(async () => { $("#det", el).innerHTML = V.recordDetail(await api(`/api/analyses/${a.dataset.an}/records/${a.dataset.row}`)); $("#det", el).scrollIntoView(); }))); });
+    $("#aGo", el).addEventListener("click", () => { page = 1; load(); }); load();
+  };
+
+  P.reports = async el => { const [runs, ds] = await Promise.all([api("/api/models/runs"), api("/api/datasets")]); setHtml(el, V.reports(runs, ds)); };
+  P.system = async el => setHtml(el, V.system(await api("/api/system/info")));
+
+  async function render() {
+    timers.forEach(clearInterval); timers = [];
+    const r = (location.hash.slice(2).split("?")[0]) || "overview", route = P[r] ? r : "overview";
+    $("#nav").innerHTML = `<h1>NetSentinel</h1><small>Unidirectional Network Threat Analysis</small>` + ROUTES.map(([k, l]) => `<a href="#/${k}" class="${k === route ? "active" : ""}">${l}</a>`).join("");
+    main.innerHTML = `<p class="muted">Loading…</p>`;
+    try { await P[route](main); } catch (e) { main.innerHTML = banner("Could not load this page: " + esc(e.message), "bad"); }
+  }
+  window.addEventListener("hashchange", render); render();
+})();
+</script>
+</body>
+</html>

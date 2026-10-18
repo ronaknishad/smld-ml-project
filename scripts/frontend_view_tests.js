@@ -1,0 +1,38 @@
+const V = require(process.argv[2]); const P = require(process.argv[3]);
+let fails = 0, checks = 0;
+const ok = (c, m) => { checks++; if (!c) { fails++; console.log("FAIL:", m); } };
+const clean = (name, html, ...must) => {
+  ok(typeof html === "string" && html.length > 50, name + " produced html");
+  ok(!/undefined|NaN|\[object/.test(html), name + " has no undefined/NaN/[object] leaks: " + (html.match(/.{30}(undefined|NaN|\[object).{30}/) || [""])[0]);
+  ok(!html.includes(P.evil), name + " has no raw unescaped payload");
+  must.forEach(m => ok(html.includes(m), name + " contains: " + m));
+};
+clean("overview", V.overview(P.overview), "Latest analysis", "Predicted class distribution", "not confirmed attacks");
+clean("overview-empty", V.overview({datasets: 0, training_runs: 0, open_alerts: 0, active_model: null, latest_analysis: null, latest_dataset: null}), "No traffic dataset has been analysed yet");
+clean("datasetForm", V.datasetForm(P.files.files, P.files.data_dir), "dayA.csv", "forward-direction compatibility");
+clean("datasetForm-empty", V.datasetForm([], "C:\\x"), "No .csv files found");
+clean("datasetList", V.datasetList(P.datasets), "synthetic", "data-id=");
+clean("datasetDetail-cic", V.datasetDetail(P.dsA, P.prevA), "Cleaning report", "NOT strict", "partial sample", "Class distribution");
+clean("datasetDetail-syn", V.datasetDetail(P.syn, P.prevSyn), "SYNTHETIC");
+clean("statistics", V.statistics(P.stats), "Descriptive statistics", "H0:", "Benjamini-Hochberg", "Spearman", "Interpretation", "MWU p (BH adj.)", "distFeat");
+clean("statistics-syn", V.statistics(P.statsSyn), "chi-square", "Cramér");
+clean("distribution", V.distribution(P.dist), "<svg", "log1p(x)", "clipped");
+clean("trainForm", V.trainForm(P.datasets, P.dsA.id), "Ablation", "separate test dataset" === "" ? "" : "Test dataset");
+clean("trainForm-empty", V.trainForm([], null), "Register one first");
+clean("runs", V.runs(P.runs), "completed", "data-id=");
+clean("runDetail", V.runDetail(P.run, P.run.evaluation.selected_model), "Confusion matrices", "false negatives", "Permutation importance", "selected", "active", "cross_split", "init_win_bytes_fwd");
+clean("runDetail-syn", V.runDetail(P.run2, null), "random_stratified");
+clean("runDetail-failed", V.runDetail({id: "run_x", status: "failed", error: "boom <b>"}, null), "Training failed", "boom &lt;b&gt;");
+clean("runDetail-running", V.runDetail({id: "run_x", status: "running"}, null), "refreshes automatically");
+clean("analysisBar", V.analysisBar(P.analyses, P.analysis.id), "exAn");
+clean("analysisSummary", V.analysisSummary(P.analysis), "alerts created");
+clean("records", V.records(P.records), "P(malicious)", "Predicted", "data-row=", "Page 1");
+clean("recordDetail", V.recordDetail(P.detail), "Provenance", "not a local explanation", "uncalibrated", "Global feature importance");
+clean("alerts", V.alerts(P.alerts), "priority", "Review status", "alSave", "under review", "does not mean an attack was independently confirmed");
+ok(V.alerts(P.alerts).includes("&lt;img src=x"), "alert note is HTML-escaped");
+ok(V.datasetList(P.datasets).includes("&lt;img src=x"), "dataset name is HTML-escaped");
+clean("reports", V.reports(P.runs, P.datasets), "evaluation JSON", "alerts.csv" === "" ? "" : "Download all alerts");
+clean("system", V.system(P.system), "not implemented", "Live packet capture");
+// formatting helpers via rendered output
+ok(V.statistics(P.stats).includes("e-"), "tiny p-values shown in scientific notation");
+console.log(`${checks} checks, ${fails} failures`); process.exit(fails ? 1 : 0);
