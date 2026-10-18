@@ -67,7 +67,7 @@ Monday is benign-only: it cannot train a classifier alone, and as a test file it
 
 The datasets required to run this project are available on Google Drive.
 
-**[Download the datasets here](YOUR_GOOGLE_DRIVE_LINK)**
+**[Download the datasets here](https://drive.google.com/drive/folders/1vMKaty1vAChObLwb-veUAGXZ2kFGoXoM)**
 
 Download the dataset files and place them inside the `data/` directory in the project root before running the application.
 
